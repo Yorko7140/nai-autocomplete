@@ -100,8 +100,11 @@ export const IDLECLOUD_FIXTURE_HTML = `<!doctype html>
   const content = document.getElementById('_r_16_-content');
   toggle.addEventListener('click', () => {
     const open = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!open));
-    content.hidden = open;
+    // 真实站点是 MUI Collapse，展开有 300ms 动画，点完立刻去点「Add character」会被重渲染吞掉
+    setTimeout(() => {
+      toggle.setAttribute('aria-expanded', String(!open));
+      content.hidden = open;
+    }, 300);
   });
 
   let characterCount = 0;
@@ -116,7 +119,7 @@ export const IDLECLOUD_FIXTURE_HTML = `<!doctype html>
         <button role="tab" aria-selected="true" data-char-tab="prompt">Character prompt</button>
         <button role="tab" aria-selected="false" data-char-tab="avoid">Character exclusions</button>
       </div>
-      <textarea class="character-prompt" aria-label="Character description" placeholder="Character description"></textarea>
+      <textarea class="character-prompt" placeholder="Describe the character’s appearance, clothing, and features…"></textarea>
     \`;
     const textarea = card.querySelector('textarea');
     const charTabs = Array.from(card.querySelectorAll('[role="tab"]'));
@@ -127,9 +130,9 @@ export const IDLECLOUD_FIXTURE_HTML = `<!doctype html>
         if (current) values[current.dataset.charTab] = textarea.value;
         charTabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
         textarea.value = values[tab.dataset.charTab];
-        const label = tab.dataset.charTab === 'avoid' ? 'Character exclusions' : 'Character description';
-        textarea.setAttribute('aria-label', label);
-        textarea.placeholder = label;
+        textarea.placeholder = tab.dataset.charTab === 'avoid'
+          ? 'Describe what the character should avoid…'
+          : 'Describe the character’s appearance, clothing, and features…';
       });
     });
     textarea.addEventListener('input', () => {
@@ -137,7 +140,7 @@ export const IDLECLOUD_FIXTURE_HTML = `<!doctype html>
       if (current) values[current.dataset.charTab] = textarea.value;
     });
 
-    document.getElementById('cc-list').appendChild(card);
+    setTimeout(() => document.getElementById('cc-list').appendChild(card), 120);
     const empty = document.getElementById('cc-empty');
     if (empty) empty.remove();
     document.getElementById('cc-count').textContent = \`\${index} configured · \${index} enabled\`;

@@ -251,7 +251,7 @@ async function main() {
 
     // —— 角色栏：折叠展开 + 补位 + 写入（用真实 chunk 源码，不经 UI）
     const characterSource = fs.readFileSync(path.join(ROOT, 'js/assistant/21-nai-character-fields.js'), 'utf8');
-    await evaluate(client, sessionId, `(() => { ${characterSource}\n window.__char = { fillNaiCharacterFields, listNaiCharacterFields, findNaiCharacterSectionToggle }; })()`);
+    await evaluate(client, sessionId, `(() => { ${siteProfileSource}\n ${characterSource}\n window.__char = { fillNaiCharacterFields, listNaiCharacterFields, findNaiCharacterSectionToggle }; })()`);
 
     const beforeOpen = await evaluate(client, sessionId, `document.getElementById('_r_16_-toggle').getAttribute('aria-expanded')`);
     const filled = await evaluate(client, sessionId, `window.__char.fillNaiCharacterFields([

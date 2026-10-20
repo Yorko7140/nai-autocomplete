@@ -47,6 +47,8 @@ function isNaiCharacterField(element) {
   if (/character[-_ ]?name|角色名称|角色名/.test(signals)) return false;
   // idlecloud 的角色卡把提示词框标成 "Character description"，排除框是 "Character exclusions"
   if (/character[-_ ]?prompt|char[-_ ]?caption|character[-_ ]?desc|character\s*\d|角色提示词|人物提示词|角色描述/.test(signals)) return true;
+  // 站点只给了 placeholder：Describe the character’s appearance, clothing, and features…
+  if (/describe\s+the\s+character|character[’'`]?s?\s+(appearance|clothing|feature|description)/.test(signals)) return true;
 
   // 站点没在字段上留签名时，退一步看它在不在角色卡片容器里
   const card = element.closest?.('[data-character-index], [data-testid*="character"], [class*="character-card"], [class*="CharacterCard"], [class*="characterPrompt"]');
@@ -75,17 +77,25 @@ function findNaiCharacterSectionToggle() {
 async function ensureNaiCharacterSectionOpen() {
   const toggle = findNaiCharacterSectionToggle();
   if (!toggle) return null;
-  if (toggle.getAttribute('aria-expanded') === 'false') {
-    toggle.click();
-    await nextNaiFrame();
-    await nextNaiFrame();
+  if (toggle.getAttribute('aria-expanded') !== 'false') return toggle;
+
+  toggle.click();
+  // 站点的折叠面板带 300ms 左右的展开动画，点完立刻去点「Add character」会被 React 的
+  // 重渲染吞掉，所以要等 aria-expanded 真的翻过来（而不是只等一两帧）
+  for (let i = 0; i < 12; i += 1) {
+    await waitNaiMs(50);
+    if (toggle.getAttribute('aria-expanded') !== 'false') break;
   }
   return toggle;
 }
 
 function listNaiCharacterFields() {
-  return Array.from(document.querySelectorAll(NAI_FIELD_SELECTOR))
+  const all = Array.from(document.querySelectorAll(NAI_FIELD_SELECTOR))
     .filter((field) => isNaiEditableField(field) && !isNaiNegativeField(field) && isNaiCharacterField(field));
+  // 页面上还藏着别的输入框（站点自绘的、AI Chat 的），优先只用看得见的那些；
+  // 角色区整体折叠时一个都看不见，这时候退回去用全部，免得误判成「没有角色栏」
+  const visible = all.filter((field) => naiElementIsVisible(field));
+  return visible.length ? visible : all;
 }
 
 function findNaiAddCharacterButton() {
@@ -122,6 +132,10 @@ function nextNaiFrame() {
   return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
 
+function waitNaiMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // 点「添加角色」补足栏位。参考实现点完只 await 一个微任务就去数，React 还没重渲染完，
 // 会漏数然后误判「加不上去了」。这里等一帧再数，并且连续两轮不涨就停 —— 不能无限点。
 async function ensureNaiCharacterFields(count) {
@@ -135,7 +149,9 @@ async function ensureNaiCharacterFields(count) {
 
     const before = fields.length;
     button.click();
+    // 新增角色卡是异步渲染的，等一帧再补一小段，否则会误判成「加不上去」
     await nextNaiFrame();
+    await waitNaiMs(120);
     fields = listNaiCharacterFields();
     stalled = fields.length > before ? 0 : stalled + 1;
   }
