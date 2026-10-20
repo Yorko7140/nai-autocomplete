@@ -5,9 +5,16 @@
 // 只填输入框，不碰「生成」——「不要加任何触发出图的功能」那条红线在这儿也算数。
 
 const NAI_FIELD_SELECTOR = 'textarea, input[type="text"], [contenteditable="true"], [role="textbox"]';
-const NAI_ADD_CHARACTER_PATTERN = /add\s*(a\s*)?character|添加角色|新增角色|追加角色/i;
+// 「添加角色段」是 TAG 流编辑器自己的按钮，不能当成站点的「Add character」
+const NAI_ADD_CHARACTER_PATTERN = /add\s+(a\s+)?character|添加角色(?!段)|新增角色|追加角色/i;
 // 角色栏最多试到 6 个：这是我们这边快捷位的数量，不是 NAI 的模型上限
 const NAI_MAX_CHARACTER_SLOTS = 6;
+
+// 插件自己的界面也挂在这棵 DOM 上（面板、流编辑器、各种隐藏输入框），
+// 找站点元素时必须整棵排除，否则「＋ 角色段」会被当成站点的「Add character」
+function naiIsExtensionUi(element) {
+  return Boolean(element?.closest?.('[class*="nai-md3"]'));
+}
 
 function naiFieldSignals(element) {
   return [
@@ -59,6 +66,7 @@ function isNaiCharacterField(element) {
 // 文案是「Character control · 0 configured」这种，没有 aria-label。
 function findNaiCharacterSectionToggle() {
   return Array.from(document.querySelectorAll('button[aria-expanded]')).find((button) => {
+    if (naiIsExtensionUi(button)) return false;
     const text = [
       button.innerText,
       button.textContent,
@@ -81,16 +89,22 @@ async function ensureNaiCharacterSectionOpen() {
 
   toggle.click();
   // 站点的折叠面板带 300ms 左右的展开动画，点完立刻去点「Add character」会被 React 的
-  // 重渲染吞掉，所以要等 aria-expanded 真的翻过来（而不是只等一两帧）
+  // 重渲染吞掉：先等 aria-expanded 翻过来，再等「Add character」真的露出来
   for (let i = 0; i < 12; i += 1) {
     await waitNaiMs(50);
     if (toggle.getAttribute('aria-expanded') !== 'false') break;
+  }
+  for (let i = 0; i < 12; i += 1) {
+    const addButton = findNaiAddCharacterButton();
+    if (addButton && naiElementIsVisible(addButton)) break;
+    await waitNaiMs(50);
   }
   return toggle;
 }
 
 function listNaiCharacterFields() {
   const all = Array.from(document.querySelectorAll(NAI_FIELD_SELECTOR))
+    .filter((field) => !naiIsExtensionUi(field))
     .filter((field) => isNaiEditableField(field) && !isNaiNegativeField(field) && isNaiCharacterField(field));
   // 页面上还藏着别的输入框（站点自绘的、AI Chat 的），优先只用看得见的那些；
   // 角色区整体折叠时一个都看不见，这时候退回去用全部，免得误判成「没有角色栏」
@@ -101,6 +115,7 @@ function listNaiCharacterFields() {
 function findNaiAddCharacterButton() {
   return Array.from(document.querySelectorAll('button, [role="button"]')).find((button) => {
     if (button.disabled || button.getAttribute?.('aria-disabled') === 'true') return false;
+    if (naiIsExtensionUi(button)) return false;
     return NAI_ADD_CHARACTER_PATTERN.test([
       button.innerText,
       button.textContent,

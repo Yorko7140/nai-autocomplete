@@ -128,7 +128,12 @@ async function main() {
       if (ready?.editors && ready?.version) break;
       await sleep(300);
     }
-    check('停在绘图页 /main', /\/main/.test(ready?.href || ''), ready?.href || '');
+    if (!/\/main/.test(ready?.href || '') || !ready?.editors) {
+      console.error(`\n页面停在 ${ready?.href || '未知地址'}，没进到绘图页 —— session cookie 多半已失效，先重新登录再复制一份。`);
+      process.exitCode = 2;
+      return;
+    }
+    check('停在绘图页 /main', true, ready.href);
     check('提示词编辑器已渲染', ready?.editors > 0, String(ready?.editors || 0));
     check('content bundle 注入', Boolean(ready?.version), ready?.version || '未注入');
     check('悬浮球出现', ready?.fab === true);
