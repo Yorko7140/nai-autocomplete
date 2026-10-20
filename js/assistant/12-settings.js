@@ -54,6 +54,7 @@ function applySettingsToInputs() {
   if (ui.settings.glassEffect) ui.settings.glassEffect.checked = state.settings.glassEffect !== false;
   if (ui.settings.glassStrength) ui.settings.glassStrength.value = String(state.settings.glassStrength ?? DEFAULT_SETTINGS.glassStrength);
   applyLibrarySettingsToInputs();
+  applySyncSettingsToInputs();
   updateFallbackSettingsVisibility();
   updateEndpointWarnings();
   requestAnimationFrame(() => autoResizeAllTextareas());

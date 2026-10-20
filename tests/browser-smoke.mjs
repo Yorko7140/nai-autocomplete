@@ -314,6 +314,81 @@ async function main() {
     check('点画师卡写进真提示词框', /artist:test_artist/.test(afterInsert.main), afterInsert.main);
     check('画师串没有写进只读影子框', afterInsert.shadow === 'x', afterInsert.shadow);
 
+    // —— 跨设备同步：设置页那张卡片在不在、口令框有没有踩到密码框的坑
+    await evaluate(client, sessionId, `document.querySelector('.nai-library-page [data-page="settings"], [data-page="settings"]')?.click()`);
+    let syncCard = false;
+    for (let i = 0; i < 25 && !syncCard; i += 1) {
+      syncCard = await evaluate(client, sessionId, `Boolean(document.querySelector('[data-sync-root]'))`);
+      if (!syncCard) {
+        await evaluate(client, sessionId, `document.querySelector('[data-page="settings"]')?.click()`);
+        await sleep(200);
+      }
+    }
+    check('工作台设置页有跨设备同步卡片', syncCard);
+
+    const syncForm = await evaluate(client, sessionId, `(() => {
+      const root = document.querySelector('[data-sync-root]');
+      if (!root) return null;
+      const url = root.querySelector('[data-sync-field="url"]');
+      const pass = root.querySelector('[data-sync-field="passphrase"]');
+      return {
+        hasUrl: Boolean(url),
+        urlPlaceholder: url?.getAttribute('placeholder') || '',
+        passType: pass?.getAttribute('type') || '',
+        passClass: pass?.className || '',
+        actions: Array.from(root.querySelectorAll('[data-action]')).map((el) => el.dataset.action),
+      };
+    })()`);
+    check('同步卡片有 WebDAV 地址输入', syncForm?.hasUrl === true, JSON.stringify(syncForm));
+    check('同步口令框不是 password 类型', syncForm?.passType === 'text' && /nai-md3-secret/.test(syncForm?.passClass || ''), JSON.stringify(syncForm));
+    check('同步卡片带四个动作按钮', ['sync-test', 'sync-both', 'sync-push', 'sync-pull'].every((action) => syncForm?.actions?.includes(action)), JSON.stringify(syncForm?.actions));
+
+    await evaluate(client, sessionId, `document.querySelector('[data-action="sync-test"]')?.click()`);
+    // 点完先把状态行改成「正在测试连接…」，得等它落到最终结果
+    let syncStatus = '';
+    for (let i = 0; i < 40; i += 1) {
+      syncStatus = await evaluate(client, sessionId, `document.querySelector('[data-sync-status]')?.textContent || ''`);
+      if (syncStatus && !/正在测试连接/.test(syncStatus)) break;
+      await sleep(150);
+    }
+    check('没配地址时点测试连接会提示', /WebDAV 地址/.test(syncStatus), syncStatus);
+
+    if (process.env.SHOT_SYNC) {
+      await sleep(300);
+      const shot = await client.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+      fs.writeFileSync(process.env.SHOT_SYNC, Buffer.from(shot.data, 'base64'));
+      console.log('截图', process.env.SHOT_SYNC);
+    }
+
+    if (process.env.SHOT_ARTIST) {
+      const created = await client.send('Target.createTarget', { url: `chrome-extension://${extensionId}/pages/artist-library.html` });
+      const artistPage = await client.send('Target.attachToTarget', { targetId: created.targetId, flatten: true });
+      await client.send('Runtime.enable', {}, artistPage.sessionId);
+      await client.send('Page.enable', {}, artistPage.sessionId);
+      await sleep(1500);
+      const opened = await client.send('Runtime.evaluate', {
+        expression: `(() => {
+          document.querySelector('[data-action="toggleSyncPanel"]')?.click();
+          return Boolean(document.querySelector('#syncPanelSlot [data-sync-root]'));
+        })()`,
+        returnByValue: true,
+      }, artistPage.sessionId);
+      check('独立画师记录本页能展开同步抽屉', opened.result?.value === true);
+      await sleep(900);
+      const geom = await client.send('Runtime.evaluate', {
+        expression: `(() => {
+          const slot = document.getElementById('syncPanelSlot');
+          const rect = slot.getBoundingClientRect();
+          return { width: Math.round(rect.width), height: Math.round(rect.height), inputs: slot.querySelectorAll('input').length, hidden: slot.hidden };
+        })()`,
+        returnByValue: true,
+      }, artistPage.sessionId);
+      console.log('  同步抽屉几何:', JSON.stringify(geom.result?.value));
+      const shot = await client.send('Page.captureScreenshot', { format: 'png' }, artistPage.sessionId);
+      fs.writeFileSync(process.env.SHOT_ARTIST, Buffer.from(shot.data, 'base64'));
+      console.log('  截图', process.env.SHOT_ARTIST);
+    }
+
     const consoleErrors = await evaluate(client, sessionId, `window.__naiSmokeErrors ? window.__naiSmokeErrors.length : 0`);
     check('页面没有未捕获异常', !consoleErrors, String(consoleErrors));
 

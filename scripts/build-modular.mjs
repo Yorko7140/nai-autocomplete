@@ -198,6 +198,8 @@ bundleScript({
 bundleScript({
   chunkDir: ARTIST_CHUNK_DIR,
   bundlePath: ARTIST_BUNDLE,
+  // 独立画师记录本页也要挂同步卡片，所以把 shared 一并前置
+  sharedDirs: [SITE_SHARED_CHUNK_DIR],
 });
 
 bundleBackground({ sharedDirs: [SITE_SHARED_CHUNK_DIR] });

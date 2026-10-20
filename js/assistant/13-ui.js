@@ -554,6 +554,10 @@ function createUI() {
                   </div>
                 </div>
 
+                <!-- 跨设备同步：配置放在这里，数据跟着 WebDAV 走。
+                     卡片内容由 23-sync-ui.js 拼，省得两份设置页各写一遍。 -->
+                ${syncSettingsMarkup()}
+
                 <div class="nai-library-settings-save">
                   <button type="button" class="is-primary" data-action="library-save-settings">${T.saveSettings}</button>
                 </div>
@@ -915,6 +919,7 @@ function createUI() {
     else if (action === 'wb-save-presets') await saveWorkbenchPresets();
     else if (action === 'wb-apply-role-library') { const sel = ui.wb.roleLibrarySelect; const entry = state.promptLibrary.find((x) => x.id === sel?.value && x.category === ROLE_LIBRARY_CATEGORY); if (entry && ui.wb.rolePrompt) { ui.wb.rolePrompt.value = entry.tags.map((t, i) => `${t}${entry.delimiters?.[i] || ''}`).join(''); } }
     else if (action === 'save-settings') await saveSettings();
+    // 同步卡片的按钮由 naiSyncMountPanel 自己接管（卡片内 stopPropagation），这里不再处理
     else if (action === 'clear-history') await clearHistory();
     else if (action === 'history-copy') {
       const item = state.history.find((x) => x.id === actionTarget.dataset.id);

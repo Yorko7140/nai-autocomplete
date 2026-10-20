@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "NovelAI Prompt Autocomplete",
-  "version": "1.6.11",
+  "version": "1.6.12",
   "description": "NovelAI autocomplete with MD3 image reverse assistant",
   "permissions": [
     "storage",
     "activeTab",
     "tabs",
     "scripting",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "host_permissions": [
     "https://novelai.net/*",

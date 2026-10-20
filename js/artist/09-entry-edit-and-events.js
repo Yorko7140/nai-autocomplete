@@ -221,6 +221,18 @@ document.addEventListener('click', e => {
     case 'stopGrab': grabStopFlag = true; break;
     case 'openDanbooru': chrome.tabs.create({ url: 'https://danbooru.donmai.us/' }); break;
     case 'openPost': chrome.tabs.create({ url: 'https://danbooru.donmai.us/posts/' + encodeURIComponent(el.dataset.postId) }); break;
+    case 'toggleSyncPanel': {
+      const slot = document.getElementById('syncPanelSlot');
+      if (!slot) break;
+      const willShow = slot.hidden;
+      slot.hidden = !willShow;
+      if (willShow && !slot.dataset.ready) {
+        slot.innerHTML = naiSyncPanelMarkup();
+        naiSyncMountPanel(naiSyncPanelRoot(slot));
+        slot.dataset.ready = '1';
+      }
+      break;
+    }
     case 'openLogModal': openLogModal(); break;
     case 'runDiagnosis': runDiagnosis(); break;
     case 'clearLogs': grabLogs = []; renderLogs(); break;

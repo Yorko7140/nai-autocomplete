@@ -34,6 +34,7 @@
     <button class="btn-ghost btn-sm" data-action="importClick" title="导入完整备份（JSON）或手机版网页（HTML），可合并到当前画师库或新建画师库">📂 导入备份</button>
     <button class="btn-blue btn-sm" data-action="openBatchModal" title="为列表中的所有画师从 Danbooru 获取原图">🤖 批量获取原图</button>
     <button class="btn-ghost btn-sm" data-action="openLogModal" title="查看获取原图的运行日志，遇到问题时可复制给开发者">📋 运行日志</button>
+    <button class="btn-ghost btn-sm" data-action="toggleSyncPanel" title="通过 WebDAV 在手机和电脑之间同步画师库、画师串等数据">☁️ 跨设备同步</button>
     <input type="file" id="importFile" accept=".json,.html,.htm" style="display:none">
     <input type="file" id="entryImgFile" accept="image/*" style="display:none">
     <div id="storageText"></div>
@@ -258,5 +259,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="../js/bundle/artist-library.js"></script>
+<!-- 跨设备同步抽屉：点页脚「☁️ 跨设备同步」才展开，卡片本体来自 shared/02-sync-panel.js -->
+<div id="syncPanelSlot" class="sync-panel-slot" hidden></div>
+
 </body>
 </html>

@@ -14,16 +14,27 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const BACKGROUND_DIR = path.join(ROOT, 'js', 'background');
 
 function readChunks() {
-  return fs
+  // 和构建脚本一个顺序：js/shared 先前置进 background bundle，再拼 js/background 的 chunk。
+  const sharedDir = path.join(ROOT, 'js', 'shared');
+  const shared = fs.existsSync(sharedDir)
+    ? fs
+      .readdirSync(sharedDir)
+      .filter((name) => name.endsWith('.js'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((name) => ({ name, source: fs.readFileSync(path.join(sharedDir, name), 'utf8') }))
+    : [];
+  const own = fs
     .readdirSync(BACKGROUND_DIR)
     .filter((name) => name.endsWith('.js'))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .map((name) => ({ name, source: fs.readFileSync(path.join(BACKGROUND_DIR, name), 'utf8') }));
+  return [...shared, ...own];
 }
 
 function createChromeMock() {
   const listeners = {
     message: [], installed: [], actionClicked: [], tabsUpdated: [], tabsActivated: [], storageChanged: [],
+    startup: [], alarm: [],
   };
   const calls = [];
   const store = {};
@@ -43,8 +54,18 @@ function createChromeMock() {
         lastError: null,
         getURL: (relative) => `chrome-extension://test/${relative}`,
         onInstalled: { addListener: (fn) => listeners.installed.push(fn) },
+        onStartup: { addListener: (fn) => listeners.startup.push(fn) },
         onMessage: { addListener: (fn) => listeners.message.push(fn) },
         sendMessage: (...args) => record('runtime.sendMessage', args),
+      },
+      // 跨设备同步的自动同步走 chrome.alarms；测试里记下 create / clear 的调用即可。
+      alarms: {
+        create: (...args) => record('alarms.create', args),
+        clear: async (...args) => {
+          record('alarms.clear', args);
+          return true;
+        },
+        onAlarm: { addListener: (fn) => listeners.alarm.push(fn) },
       },
       action: {
         setTitle: (...args) => record('action.setTitle', args),
@@ -71,6 +92,11 @@ function createChromeMock() {
       storage: {
         local: {
           get: (keys, callback) => {
+            // 同步要读「全部键」（传 null），其它调用传数组或字符串
+            if (keys === null || keys === undefined) {
+              callback?.({ ...store });
+              return;
+            }
             const wanted = Array.isArray(keys) ? keys : [keys];
             callback?.(Object.fromEntries(wanted.map((key) => [key, store[key]]).filter(([, v]) => v !== undefined)));
           },
@@ -107,6 +133,8 @@ export function createBackgroundSandbox() {
     JSON,
     btoa: (input) => Buffer.from(input, 'binary').toString('base64'),
     atob: (input) => Buffer.from(input, 'base64').toString('binary'),
+    // 同步用 WebCrypto：PBKDF2 派生 + AES-GCM。Node 18+ 的 globalThis.crypto 就是同一套接口。
+    crypto,
     // 读 NAI 元数据要解 zTXt(deflate) 和隐写 payload(gzip)。
     // 这三个是宿主对象不是 ECMAScript 内建，vm 的新 realm 里不会自带，必须注进来。
     Blob,

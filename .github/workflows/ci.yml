@@ -61,6 +61,9 @@ jobs:
       - name: Test build integrity
         run: node scripts/test-build.mjs
 
+      - name: Test cross-device sync
+        run: node scripts/test-sync.mjs
+
       - name: Validate release package
         run: node scripts/package.mjs
 
