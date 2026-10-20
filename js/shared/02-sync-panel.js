@@ -107,6 +107,11 @@ function naiSyncPanelSetStatus(root, text, tone = '') {
 
 function naiSyncPanelFill(root, config) {
   if (!root || !config) return;
+  // 配置是异步拉回来的：用户可能已经开始填了，这时候别拿旧值把人家敲的擦掉
+  if (root.dataset.userEdited === '1') {
+    root.dataset.deviceId = config.deviceId || root.dataset.deviceId || '';
+    return;
+  }
   const set = (field, value) => {
     const input = naiSyncPanelInput(root, field);
     if (!input) return;
@@ -240,6 +245,9 @@ async function naiSyncPanelHandle(root, action) {
 function naiSyncMountPanel(root) {
   if (!root || root.dataset.syncBound === '1') return;
   root.dataset.syncBound = '1';
+  root.addEventListener('input', () => {
+    root.dataset.userEdited = '1';
+  });
   root.addEventListener('click', (event) => {
     const button = event.target?.closest?.('[data-action]');
     if (!button || !root.contains(button)) return;
