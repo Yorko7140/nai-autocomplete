@@ -419,7 +419,7 @@ async function executeAgentTool(call, index, options = {}) {
   // 面板那边永远会带上这个标志（设置里默认开），所以实际行为不变。
   const allowRemote = options.allowDanbooruLookup === true;
   if (!index.length && !allowRemote) {
-    return { error: '本地词典尚未缓存。在任意支持的站点打开一次自动补全让词典加载好后即可查证；这轮先按常识写，并在底部标注不确定的 tag。' };
+    return { error: '本地词典尚未缓存。在 novelai.net 或 nai.idlecloud.cc 打开一次自动补全让词典加载好后即可查证；这轮先按常识写，并在底部标注不确定的 tag。' };
   }
 
   const results = {};

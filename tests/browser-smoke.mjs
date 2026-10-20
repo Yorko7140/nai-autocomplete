@@ -271,6 +271,49 @@ async function main() {
     check('填充结果自报 ok', filled?.ok === true, JSON.stringify(filled));
     check('整个过程没碰只读影子框', after.shadow === 'x', after.shadow);
 
+    // —— 画师库全链路：从扩展侧写入数据 → 面板画师页 → 点卡片 → 落到真 textarea
+    const workerTarget = (await client.send('Target.getTargets')).targetInfos
+      .find((info) => info.type === 'service_worker');
+    const worker = await client.send('Target.attachToTarget', { targetId: workerTarget.targetId, flatten: true });
+    await client.send('Runtime.enable', {}, worker.sessionId);
+
+    const library = {
+      artists: [{ id: 'a1', name: '测试画师', tag: 'artist:test_artist', rating: 4.5, notes: '', categories: ['厚涂'] }],
+      labels: ['厚涂'],
+      artistStrings: [],
+      pages: [{ id: 'default', name: '我的画师库' }],
+      activePageId: 'default',
+    };
+    await client.send('Runtime.evaluate', {
+      expression: `chrome.storage.local.set({ naiArtistTracker_v1: ${JSON.stringify(JSON.stringify(library))} })`,
+      awaitPromise: true,
+      returnByValue: true,
+    }, worker.sessionId);
+    await sleep(300);
+
+    await evaluate(client, sessionId, `document.querySelector('.nai-md3-fab').click()`);
+    await sleep(400);
+    await evaluate(client, sessionId, `document.querySelector('.nai-md3-panel [data-page="artists"]')?.click()`);
+    let cardReady = false;
+    for (let i = 0; i < 25 && !cardReady; i += 1) {
+      cardReady = await evaluate(client, sessionId, `Boolean(document.querySelector('.nai-artist-quick-card'))`);
+      if (!cardReady) {
+        await evaluate(client, sessionId, `document.querySelector('.nai-md3-panel [data-page="artists"]')?.click()`);
+        await sleep(250);
+      }
+    }
+    check('画师库卡片渲染', cardReady);
+
+    await evaluate(client, sessionId, `document.querySelector('.nai-artist-quick-card')?.click()`);
+    await sleep(500);
+    const afterInsert = await evaluate(client, sessionId, `({
+      main: document.getElementById('_r_17_-input').value,
+      shadow: document.querySelectorAll('.prompt-editor-input textarea')[1].value,
+      status: document.querySelector('.nai-md3-panel [data-status]')?.textContent || ''
+    })`);
+    check('点画师卡写进真提示词框', /artist:test_artist/.test(afterInsert.main), afterInsert.main);
+    check('画师串没有写进只读影子框', afterInsert.shadow === 'x', afterInsert.shadow);
+
     const consoleErrors = await evaluate(client, sessionId, `window.__naiSmokeErrors ? window.__naiSmokeErrors.length : 0`);
     check('页面没有未捕获异常', !consoleErrors, String(consoleErrors));
 
