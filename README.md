@@ -12,6 +12,26 @@
 
 项目仓库：<https://github.com/Miint-Sunny/nai-autocomplete>（fork 自 <https://github.com/saltysalrua/nai-autocomplete>）
 
+## 本 fork 的改动：多站点支持
+
+本仓库 fork 自 <https://github.com/Yorko7140/nai-autocomplete>，在原版基础上增加了对 **IdleCloud 中转站（`https://nai.idlecloud.cc`）** 的适配，novelai.net 上的行为保持不变。
+
+| 能力 | novelai.net | nai.idlecloud.cc |
+|---|---|---|
+| tag 自动补全、提示词区块 | ✓（ProseMirror 富文本） | ✓（MUI 文本框 + 只读影子框，已排除） |
+| 画师库一键写入 | ✓ | ✓（当前停在负向 Tab 时先切回正向） |
+| 角色栏填充 | ✓ | ✓（角色区默认折叠，会自动展开并按需补位） |
+| 图片反推、写词 Agent、改词 | ✓ | ✓ |
+| 工作台入口（点扩展图标） | ✓（`/image`） | ✓（`/main`） |
+
+站点差异集中在 `js/shared/00-site-profile.js` 一处：提示词框选择器、绘图层路径、是否需要官方 chunk bridge 都在这张表里。构建时它被前置进 content / assistant / background 三个 bundle。
+
+本地替身页冒烟（不需要登录态、不会发出图请求）：
+
+```bash
+node tests/browser-smoke.mjs
+```
+
 ## 功能概览
 
 ### 1. NovelAI tag 自动补全

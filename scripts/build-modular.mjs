@@ -11,6 +11,7 @@ const ASSISTANT_CHUNK_DIR = 'js/assistant';
 const BACKGROUND_CHUNK_DIR = 'js/background';
 const ARTIST_CHUNK_DIR = 'js/artist';
 const FLOW_CHUNK_DIR = 'js/flow';
+const SITE_SHARED_CHUNK_DIR = 'js/shared';
 const STYLE_CHUNK_DIR = 'styles';
 
 const CONTENT_BUNDLE = 'js/bundle/content.js';
@@ -66,14 +67,19 @@ ${epilogue ? `\n${epilogue.trimEnd()}\n` : ''}})();
   return bundlePath;
 }
 
-function bundleBackground() {
+// background 也需要站点判定（扩展图标点开什么、哪些标签页算绘图页），
+// 和 content/assistant 用同一份站点表，避免三处各写一个 novelai.net 判断。
+function bundleBackground({ sharedDirs = [] } = {}) {
   const chunks = listChunkFiles(BACKGROUND_CHUNK_DIR);
   if (!chunks.length) {
     throw new Error(`No chunk files found in ${BACKGROUND_CHUNK_DIR}`);
   }
 
-  const source = `${chunks
-    .map((name) => readFile(path.posix.join(BACKGROUND_CHUNK_DIR, name)).trimEnd())
+  const sharedBody = sharedDirs.flatMap((dir) => listChunkFiles(dir)
+    .map((name) => readFile(path.posix.join(dir, name)).trimEnd()));
+
+  const source = `${[...sharedBody, ...chunks
+    .map((name) => readFile(path.posix.join(BACKGROUND_CHUNK_DIR, name)).trimEnd())]
     .join('\n\n')}
 `;
 
@@ -177,14 +183,14 @@ seedBackgroundFromBackupIfMissing();
 bundleScript({
   chunkDir: CONTENT_CHUNK_DIR,
   bundlePath: CONTENT_BUNDLE,
-  sharedDirs: [FLOW_CHUNK_DIR],
+  sharedDirs: [SITE_SHARED_CHUNK_DIR, FLOW_CHUNK_DIR],
   epilogue: contentEpilogue,
 });
 
 bundleScript({
   chunkDir: ASSISTANT_CHUNK_DIR,
   bundlePath: ASSISTANT_BUNDLE,
-  sharedDirs: [FLOW_CHUNK_DIR],
+  sharedDirs: [SITE_SHARED_CHUNK_DIR, FLOW_CHUNK_DIR],
   preamble: assistantPreamble,
   epilogue: assistantEpilogue,
 });
@@ -194,7 +200,7 @@ bundleScript({
   bundlePath: ARTIST_BUNDLE,
 });
 
-bundleBackground();
+bundleBackground({ sharedDirs: [SITE_SHARED_CHUNK_DIR] });
 bundleStyles();
 writeServiceWorkerEntry();
 writeManifest();

@@ -1,7 +1,12 @@
-const PROMPT_EDITOR_SELECTOR = '.ProseMirror, textarea.comfy-multiline-input';
+// 提示词输入框的位置由共享站点层决定（见 js/shared/00-site-profile.js）：
+// novelai.net 是 ProseMirror 富文本，idlecloud 是 MUI 文本框 + 只读影子 textarea。
+// 这里的两个入口是整套抓取逻辑的唯一出口，别在别处再写死选择器。
+function promptEditorSelector() {
+  return naiPromptEditorSelector();
+}
 
 function findPromptEditor(element) {
-  return element?.closest?.(PROMPT_EDITOR_SELECTOR) || null;
+  return naiResolvePromptEditor(element) || null;
 }
 
 function isPlainTextPromptEditor(editor) {
@@ -36,7 +41,7 @@ function safeSetRangeBoundary(range, boundary, node, offset) {
 }
 
 function listPromptEditors() {
-  return Array.from(document.querySelectorAll(PROMPT_EDITOR_SELECTOR));
+  return naiListPromptEditors();
 }
 
 function getTextareaCaretCoordinates(textarea, position) {

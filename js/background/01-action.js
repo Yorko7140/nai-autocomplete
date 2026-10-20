@@ -6,13 +6,9 @@ chrome.runtime.onInstalled.addListener(() => {
 // 两个界面，两个入口：
 //   · 右下悬浮球 → 悬浮窗（反推 / 写词 / 改词 / 画师 / 历史 / 设置）
 //   · 浏览器扩展图标 → 工作台（只在 novelai.net 出图页有；别处退回悬浮窗）
+// 站点表在 js/shared/00-site-profile.js，构建时前置进 background bundle
 function isWorkbenchPage(url) {
-  try {
-    const parsed = new URL(url || '');
-    return parsed.origin === 'https://novelai.net' && parsed.pathname === '/image';
-  } catch (error) {
-    return false;
-  }
+  return naiIsImageUrl(url);
 }
 
 function updateActionTitle(tabId, url) {

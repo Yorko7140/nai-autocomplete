@@ -377,7 +377,7 @@ function isNovelAISiteLocation() {
 }
 
 function isNovelAIImageLocation() {
-  return window.location.origin === 'https://novelai.net' && window.location.pathname === '/image';
+  return naiIsImagePage(window);
 }
 
 function applyPageMode() {

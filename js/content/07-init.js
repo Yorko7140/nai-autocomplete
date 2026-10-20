@@ -9,7 +9,7 @@ async function init() {
   } catch (e) {}
 
   syncThemeFromStorage();
-  if (location.hostname === 'novelai.net') {
+  if (naiCurrentSiteProfile()?.hasOfficialBridge) {
     ensureOfficialChunkBridgeScript();
   }
   await loadPromptLibrary();

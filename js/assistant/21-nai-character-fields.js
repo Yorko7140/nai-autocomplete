@@ -34,8 +34,10 @@ function isNaiEditableField(element) {
     || element.getAttribute?.('role') === 'textbox';
 }
 
+// idlecloud 的负向框跟着 Tab 换 placeholder（Describe what should be avoided…），
+// 角色卡里的排除框叫 Character exclusions，两种都要算负向，否则会被当成正向内容填进去。
 function isNaiNegativeField(element) {
-  return /negative|undesired|\buc\b|反向|负面|不希望/.test(naiFieldSignals(element));
+  return /negative|undesired|exclusion|\buc\b|avoid|反向|负面|不希望|排除/.test(naiFieldSignals(element));
 }
 
 // 「角色名称」不是提示词栏，得先排掉 —— 它和角色提示词栏挨在一起，签名里都有 character
@@ -43,11 +45,42 @@ function isNaiCharacterField(element) {
   if (!element) return false;
   const signals = naiFieldSignals(element);
   if (/character[-_ ]?name|角色名称|角色名/.test(signals)) return false;
-  if (/character[-_ ]?prompt|char[-_ ]?caption|角色提示词|人物提示词|character\s*\d/.test(signals)) return true;
+  // idlecloud 的角色卡把提示词框标成 "Character description"，排除框是 "Character exclusions"
+  if (/character[-_ ]?prompt|char[-_ ]?caption|character[-_ ]?desc|character\s*\d|角色提示词|人物提示词|角色描述/.test(signals)) return true;
 
   // 站点没在字段上留签名时，退一步看它在不在角色卡片容器里
   const card = element.closest?.('[data-character-index], [data-testid*="character"], [class*="character-card"], [class*="CharacterCard"], [class*="characterPrompt"]');
   return Boolean(card) && /prompt|caption|提示词|描述/.test(signals);
+}
+
+// 角色区所在的折叠面板：idlecloud 默认收起，按钮上只有 aria-expanded，
+// 文案是「Character control · 0 configured」这种，没有 aria-label。
+function findNaiCharacterSectionToggle() {
+  return Array.from(document.querySelectorAll('button[aria-expanded]')).find((button) => {
+    const text = [
+      button.innerText,
+      button.textContent,
+      button.getAttribute?.('aria-label'),
+      button.getAttribute?.('title'),
+    ].join(' ');
+    if (!/character|角色|人物|キャラ/i.test(text)) return false;
+    const controls = button.getAttribute?.('aria-controls');
+    const region = controls ? document.getElementById(controls) : null;
+    // 折叠区里连「添加角色」都摸不到的，不算角色区开关
+    if (region && !NAI_ADD_CHARACTER_PATTERN.test(region.textContent || '')) return false;
+    return true;
+  }) || null;
+}
+
+async function ensureNaiCharacterSectionOpen() {
+  const toggle = findNaiCharacterSectionToggle();
+  if (!toggle) return null;
+  if (toggle.getAttribute('aria-expanded') === 'false') {
+    toggle.click();
+    await nextNaiFrame();
+    await nextNaiFrame();
+  }
+  return toggle;
 }
 
 function listNaiCharacterFields() {
@@ -92,6 +125,7 @@ function nextNaiFrame() {
 // 点「添加角色」补足栏位。参考实现点完只 await 一个微任务就去数，React 还没重渲染完，
 // 会漏数然后误判「加不上去了」。这里等一帧再数，并且连续两轮不涨就停 —— 不能无限点。
 async function ensureNaiCharacterFields(count) {
+  await ensureNaiCharacterSectionOpen();
   let fields = listNaiCharacterFields();
   let stalled = 0;
 
@@ -130,7 +164,7 @@ async function fillNaiCharacterFields(characters) {
       ok: false,
       filled: 0,
       reason: 'not-found',
-      message: '当前页面上没有找到角色栏。请在 NovelAI 出图页添加角色后重试。',
+      message: '当前页面上没有找到角色栏。请在绘图页先添加一个角色后重试。',
     };
   }
 
@@ -139,7 +173,7 @@ async function fillNaiCharacterFields(characters) {
       ok: false,
       filled: 0,
       reason: 'too-few',
-      message: `当前页面只有 ${fields.length} 个角色栏，需要 ${needed} 个。请先在 NovelAI 中添加到 ${needed} 个角色。`,
+      message: `当前页面只有 ${fields.length} 个角色栏，需要 ${needed} 个。请先在绘图页添加到 ${needed} 个角色。`,
     };
   }
 

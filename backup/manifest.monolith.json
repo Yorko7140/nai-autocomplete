@@ -27,6 +27,7 @@
     },
     {
       "matches": [
+        "https://nai.idlecloud.cc/*",
         "https://novelai.net/*",
         "http://127.0.0.1:8188/*",
         "http://localhost:8188/*"

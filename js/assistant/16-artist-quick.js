@@ -266,6 +266,12 @@ function findArtistQuickPromptField() {
   const known = document.getElementById('prompt');
   if (isArtistQuickEditable(known) && !isArtistQuickNegativeField(known) && !isNaiCharacterField(known)) return known;
 
+  // 站点层知道容器里哪个框才是真正可写的：idlecloud 的 .prompt-editor-input 里
+  // 还躺着一个只读影子 textarea（值常常是 "x"），按 DOM 顺序优先会写到它身上。
+  const sitePrimary = naiListPromptEditors()
+    .find((field) => !isArtistQuickNegativeField(field) && !isNaiCharacterField(field));
+  if (sitePrimary) return sitePrimary;
+
   // 必须排掉角色栏：页面上开了角色提示词时，它们和主框长得一样，
   // 不排的话画师串可能被写进某个角色栏里
   const fields = Array.from(document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"], [role="textbox"]'))
@@ -300,6 +306,9 @@ async function writePromptFieldValue(value, mode = 'append') {
     setStatus(copied ? T.artistQuickCopiedNoField : T.artistQuickCopyFailed, !copied);
     return false;
   }
+
+  // idlecloud 的正/负共用同一个 textarea：此刻停在负向 Tab 的话，先切回正向再写
+  await naiEnsurePositivePromptTab(field);
 
   const replace = mode === 'replace';
 
