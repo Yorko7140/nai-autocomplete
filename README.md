@@ -157,7 +157,12 @@ node tests/browser-smoke.mjs
 - Google Vertex AI（OpenAI 兼容）
 - DeepSeek
 - Anthropic
+- **OpenCode Go**（本 fork 新增；选中后自动带上 `x-opencode-session` 请求头）
 - 自定义
+
+> 网关要求额外请求头时，在设置页的「自定义请求头（JSON）」里填，例如
+> `{"x-opencode-session":"nai-autocomplete"}`。也接受 `Key: Value` 一行一条的写法。
+> 这一项目前主模型和备模型共用。
 
 支持的接口协议：
 
