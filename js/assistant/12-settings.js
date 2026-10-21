@@ -22,6 +22,7 @@ function applySettingsToInputs() {
   ui.settings.endpoint.value = state.settings.endpoint;
   ui.settings.model.value = state.settings.model;
   ui.settings.apiKey.value = state.settings.apiKey;
+  if (ui.settings.extraHeaders) ui.settings.extraHeaders.value = state.settings.extraHeaders || '';
   renderPresetSelector();
   renderPresetBlocks();
   ui.settings.rolePrompt.value = state.settings.rolePrompt || '';
@@ -184,6 +185,7 @@ function readSettingsFromInputs() {
     defaultCodeFence: Boolean(ui.settings.defaultCodeFence.checked),
     temperature: Number(ui.settings.temperature.value) || DEFAULT_SETTINGS.temperature,
     maxTokens: Number(ui.settings.maxTokens.value) || DEFAULT_SETTINGS.maxTokens,
+    extraHeaders: String(ui.settings.extraHeaders?.value || '').trim(),
     reasoningEffort: ui.settings.reasoningEffort?.value || DEFAULT_SETTINGS.reasoningEffort,
     fallbackReasoningEffort: ui.settings.fallbackReasoningEffort?.value || DEFAULT_SETTINGS.fallbackReasoningEffort,
     enableFallbackModel: Boolean(ui.settings.enableFallbackModel.checked),

@@ -98,6 +98,9 @@ function createUI() {
                Chrome 就把整页不在 <form> 里的输入框拼成一张登录表单，宿主页的搜索框
                会被当成用户名框弹出密码自动填充（issue #5）。scripts/test-build.mjs 守着这条。 -->
           <input class="nai-md3-input nai-md3-secret" data-field="apiKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <label class="nai-md3-label">自定义请求头（JSON，可选）</label>
+          <div class="nai-md3-section-note">网关要求额外请求头时填在这里，例如 OpenCode Go 的 {"x-opencode-session":"任意字符串"}；留空表示不加。</div>
+          <textarea class="nai-md3-input" data-field="extraHeaders" rows="2" spellcheck="false" placeholder='{"x-opencode-session":"nai-autocomplete"}'></textarea>
           <div class="nai-md3-help-note nai-hidden" data-field="keyHelp"></div>
         </div>
 
@@ -303,7 +306,11 @@ function createUI() {
             <section class="nai-library-index" data-workbench-panel="library">
               <div class="nai-library-index-head">
                 <div>词库条目</div>
-                <button type="button" data-action="library-new">新建</button>
+                <div class="nai-library-index-actions">
+                  <button type="button" data-action="library-import">导入 JSON</button>
+                  <button type="button" data-action="library-export">导出 JSON</button>
+                  <button type="button" data-action="library-new">新建</button>
+                </div>
               </div>
               <div class="nai-library-list"></div>
             </section>
@@ -616,6 +623,7 @@ function createUI() {
   ui.settings.model = root.querySelector('[data-field="model"]');
   ui.settings.modelList = root.querySelector('#nai-primary-model-list');
   ui.settings.apiKey = root.querySelector('[data-field="apiKey"]');
+  ui.settings.extraHeaders = root.querySelector('[data-field="extraHeaders"]');
   ui.settings.activePresetId = root.querySelector('[data-field="activePresetId"]');
   ui.settings.presetName = root.querySelector('[data-field="activePresetName"]');
   ui.settings.roleSection = root.querySelector('.nai-preset-role-section');
@@ -865,6 +873,8 @@ function createUI() {
       openLibraryEditor();
       ui.library.name?.focus();
     }
+    else if (action === 'library-import') await importPromptLibraryFromFile();
+    else if (action === 'library-export') exportPromptLibraryToFile();
     else if (action === 'library-save-sync') await saveLibraryEditorAndSync();
     else if (action === 'library-edit') editLibraryEntry(actionTarget.dataset.id);
     else if (action === 'library-copy') await copyLibraryEntry(actionTarget.dataset.id);

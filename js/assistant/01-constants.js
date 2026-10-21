@@ -215,6 +215,7 @@ const T = {
 
 const DEFAULT_SETTINGS = {
   providerPreset: 'openai',
+  extraHeaders: '',
   protocol: 'openai-chat',
   endpoint: 'https://api.openai.com/v1/chat/completions',
   model: 'gpt-4.1-mini',
@@ -531,6 +532,8 @@ const PROVIDER_PRESETS = [
   { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-chat', endpoint: 'https://api.deepseek.com/chat/completions', defaultModel: 'deepseek-v4-flash-vision-exp' },
   { id: 'vertex-openai', label: 'Google Vertex AI（OpenAI 兼容）', protocol: 'openai-chat', endpoint: 'https://us-central1-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1/endpoints/openapi/chat/completions', defaultModel: 'google/gemini-3.5-flash' },
   { id: 'anthropic', label: 'Anthropic', protocol: 'anthropic-messages', endpoint: 'https://api.anthropic.com/v1/messages', defaultModel: 'claude-sonnet-5' },
+  // OpenCode Go 网关除了 Bearer 还要求 x-opencode-session，缺了直接 400 MissingSessionID
+  { id: 'opencode', label: 'OpenCode Go', protocol: 'openai-chat', endpoint: 'https://opencode.ai/zen/go/v1/chat/completions', defaultModel: 'deepseek-v4.1-flash', extraHeaders: { 'x-opencode-session': 'nai-autocomplete' } },
   { id: 'custom', label: '自定义', protocol: 'openai-chat', endpoint: '', defaultModel: '' },
 ];
 const NAI_DIALECT_OPTIONS = [

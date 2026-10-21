@@ -314,6 +314,27 @@ async function main() {
     check('点画师卡写进真提示词框', /artist:test_artist/.test(afterInsert.main), afterInsert.main);
     check('画师串没有写进只读影子框', afterInsert.shadow === 'x', afterInsert.shadow);
 
+    // —— OpenCode Go：网关要求 x-opencode-session，选了预设就该自动带上
+    const llmExtra = await evaluate(client, sessionId, `(() => {
+      const page = document.querySelector('.nai-md3-page[data-page="settings"]') || document;
+      const preset = page.querySelector('[data-field="providerPreset"]');
+      const headers = page.querySelector('[data-field="extraHeaders"]');
+      const options = preset ? Array.from(preset.options).map((option) => option.value) : [];
+      let filled = '';
+      let endpoint = '';
+      if (preset && headers) {
+        preset.value = 'opencode';
+        preset.dispatchEvent(new Event('change', { bubbles: true }));
+        filled = headers.value;
+        endpoint = page.querySelector('[data-field="endpoint"]')?.value || '';
+      }
+      return { hasHeaders: Boolean(headers), hasPreset: options.includes('opencode'), filled, endpoint };
+    })()`);
+    check('设置页有自定义请求头输入框', llmExtra.hasHeaders);
+    check('服务商下拉里有 OpenCode Go', llmExtra.hasPreset);
+    check('选 OpenCode Go 自动带上 x-opencode-session', /x-opencode-session/.test(llmExtra.filled || ''), llmExtra.filled);
+    check('OpenCode Go 的地址带 /zen/go/v1', /zen\/go\/v1/.test(llmExtra.endpoint || ''), llmExtra.endpoint);
+
     // —— 跨设备同步：设置页那张卡片在不在、口令框有没有踩到密码框的坑
     await evaluate(client, sessionId, `document.querySelector('.nai-library-page [data-page="settings"], [data-page="settings"]')?.click()`);
     let syncCard = false;
@@ -390,6 +411,11 @@ async function main() {
     }
 
     const consoleErrors = await evaluate(client, sessionId, `window.__naiSmokeErrors ? window.__naiSmokeErrors.length : 0`);
+    const libraryIo = await evaluate(client, sessionId, `({
+      hasImport: Boolean(document.querySelector('[data-action="library-import"]')),
+      hasExport: Boolean(document.querySelector('[data-action="library-export"]')),
+    })`);
+    check('词库页有导入 / 导出 JSON 按钮', libraryIo.hasImport && libraryIo.hasExport, JSON.stringify(libraryIo));
     check('页面没有未捕获异常', !consoleErrors, String(consoleErrors));
 
     if (process.env.DEBUG) {

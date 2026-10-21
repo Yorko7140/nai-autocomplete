@@ -172,6 +172,88 @@ function resetLibraryEditor() {
   }
 }
 
+// 词库的导入导出：把别的设备/别的工具攒的词库搬过来。
+// 导入按 alias 去重，同名的用文件里的覆盖，其余保留 —— 手滑点两次不会长出一堆重复条目。
+function pickJsonFile(accept = '.json,application/json') {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = input.files?.[0] || null;
+      input.remove();
+      resolve(file);
+    });
+    input.click();
+  });
+}
+
+async function importPromptLibraryFromFile() {
+  const file = await pickJsonFile();
+  if (!file) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (error) {
+    setStatus('这个文件不是合法 JSON', true);
+    return;
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.entries) ? parsed.entries : null;
+  if (!list) {
+    setStatus('JSON 里没有找到词库条目数组', true);
+    return;
+  }
+  const incoming = list.map(normalizePromptLibraryEntry).filter(Boolean);
+  if (!incoming.length) {
+    setStatus('文件里的条目缺少 alias 或 tags，没有可导入的内容', true);
+    return;
+  }
+  const merged = [...state.promptLibrary];
+  let added = 0;
+  let updated = 0;
+  incoming.forEach((entry) => {
+    const index = merged.findIndex((item) => item.alias === entry.alias);
+    if (index >= 0) {
+      merged[index] = { ...merged[index], ...entry, id: merged[index].id, updatedAt: Date.now() };
+      updated += 1;
+    } else {
+      merged.push(entry);
+      added += 1;
+    }
+  });
+  await storageSet({ [PROMPT_LIBRARY_KEY]: merged });
+  state.promptLibrary = merged.map(normalizePromptLibraryEntry).filter(Boolean);
+  renderPromptLibraryOptions();
+  renderLibraryManager();
+  setStatus(`词库导入完成：新增 ${added} 条，更新 ${updated} 条`, false);
+}
+
+function exportPromptLibraryToFile() {
+  const payload = state.promptLibrary.map((entry) => ({
+    id: entry.id,
+    alias: entry.alias,
+    category: entry.category,
+    name: entry.name,
+    aliases: entry.aliases,
+    tags: entry.tags,
+    delimiters: entry.delimiters,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  }));
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `nai-prompt-library-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  setStatus(`已导出 ${payload.length} 条词库条目`, false);
+}
+
 function renderLibraryManager() {
   // 编辑区的别名栏跟着分类显示/隐藏，初次渲染也得算一次 ——
   // 只在 change 事件里算的话，刚打开时它是按 markup 里的初始状态（隐藏）待着的
@@ -512,6 +594,11 @@ function syncProviderFieldsForGroup(uiGroup, kind, connectionKey) {
   state.settings.endpoint = nextConnection.endpoint;
   state.settings.model = nextConnection.model;
   state.settings.apiKey = nextConnection.apiKey;
+  const nextPreset = getProviderPresetById(nextProvider);
+  if (nextPreset?.extraHeaders && !String(state.settings.extraHeaders || '').trim()) {
+    state.settings.extraHeaders = JSON.stringify(nextPreset.extraHeaders);
+    if (ui.settings.extraHeaders) ui.settings.extraHeaders.value = state.settings.extraHeaders;
+  }
   updateEndpointWarnings();
 }
 
@@ -638,6 +725,33 @@ function updateEndpointWarnings() {
   });
 }
 
+// 自定义请求头：先按 JSON 解析；不是 JSON 就按「Key: Value」一行一条，
+// 这样手抄网关文档时不用管引号。
+function parseExtraHeadersText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    parsed = null;
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const out = {};
+    Object.entries(parsed).forEach(([key, value]) => {
+      const name = String(key || '').trim();
+      if (name) out[name] = String(value ?? '');
+    });
+    return out;
+  }
+  const out = {};
+  raw.split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^\s*([^:#]+?)\s*[:=]\s*(.+?)\s*$/);
+    if (match) out[match[1]] = match[2];
+  });
+  return out;
+}
+
 // settings 默认就是已保存的那份；「测试连接」会把表单里的草稿传进来 ——
 // 它测的必须是用户眼前看到的配置，否则就是拿另一份配置给出一句「通过」。
 function buildRequestConfig(target, messages, settings = state.settings) {
@@ -652,6 +766,7 @@ function buildRequestConfig(target, messages, settings = state.settings) {
     temperature: Number(settings.temperature) || DEFAULT_SETTINGS.temperature,
     maxTokens: Number(settings.maxTokens) || DEFAULT_SETTINGS.maxTokens,
     reasoningEffort: target.reasoningEffort || 'off',
+    extraHeaders: parseExtraHeadersText(settings.extraHeaders),
     messages,
   };
 }
