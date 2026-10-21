@@ -125,7 +125,7 @@ async function naiSyncFetch(urlString, options = {}) {
 
 async function naiSyncEnsureRemoteDir(config) {
   for (const parent of naiSyncParentUrls(naiSyncDavUrl(config))) {
-    // 405 = 目录已存在；权限不够是 401/403，交给后面的 PUT 去报
+    // 405 / 409 / 301 = 目录已经在了（各家实现不一样，坚果云回 405）；401/403 权限问题交给后面的 PUT 报
     await naiSyncFetch(parent, { method: 'MKCOL', headers: naiSyncDavHeaders(config) });
   }
 }
@@ -133,11 +133,19 @@ async function naiSyncEnsureRemoteDir(config) {
 async function naiSyncReadRemote(config) {
   const target = naiSyncDavUrl(config);
   const response = await naiSyncFetch(target, { method: 'GET', headers: naiSyncDavHeaders(config) });
-  if (response.status === 404) return null;
+  // 404 = 文件不存在；409 = 父目录还不存在（坚果云对不存在的路径就是回 409），都按「第一次同步」处理
+  if (response.status === 404 || response.status === 409) return null;
   if (response.status === 401 || response.status === 403) {
     throw new Error(`WebDAV 认证失败（${response.status}）：账号或应用密码不对，或者该目录没权限`);
   }
-  if (!response.ok) throw new Error(`读取远端文件失败：HTTP ${response.status}`);
+  if (!response.ok) {
+    const hint = response.status === 409
+      ? '（远端路径对应的目录不存在，或远端路径填成了目录）'
+      : response.status === 507
+        ? '（云端空间不足）'
+        : '';
+    throw new Error(`读取远端文件失败：HTTP ${response.status}${hint}`);
+  }
   let parsed;
   try {
     parsed = JSON.parse(response.text);

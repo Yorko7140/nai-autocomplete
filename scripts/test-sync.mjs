@@ -318,6 +318,19 @@ test('第一次同步后本地存了基线', () => {
   assert.ok(state?.base?.naiArtistTracker_v1?.hash);
 });
 
+test('坚果云对不存在的路径回 409，也当成云端为空', async () => {
+  box.setStorage({ 'nai-sync-config': davConfig(), naiArtistTracker_v1: LOCAL_ARTISTS, 'nai-sync-state': { base: {}, lastSyncAt: 0 } });
+  const calls = box.mockFetch((call) => {
+    if (call.options.method === 'GET') return textResponse('directory not found', { status: 409 });
+    if (call.options.method === 'MKCOL') return textResponse('already exists', { status: 405 });
+    return textResponse('', { status: 201 });
+  });
+  const result = await runSync({ mode: 'both' });
+  assert.equal(result.ok, true);
+  assert.equal(result.pushed >= 1, true);
+  assert.ok(calls.some((call) => call.options.method === 'PUT'), '409 之后仍然应该写入');
+});
+
 group('第二次同步：云端有另一台设备的数据');
 
 test('远端较新时把内容拉进本地 storage', async () => {
@@ -370,6 +383,13 @@ test('文件还不存在也算连通（第一次同步会去创建）', async ()
   const config = davConfig();
   box.mockFetch(() => textResponse('not found', { status: 404 }));
   const result = await testConfig(config);
+  assert.equal(result.ok, true);
+  assert.match(result.message, /还没有同步文件/);
+});
+
+test('测试连接遇到 409 也说「还没有同步文件」', async () => {
+  box.mockFetch(() => textResponse('directory not found', { status: 409 }));
+  const result = await testConfig(davConfig());
   assert.equal(result.ok, true);
   assert.match(result.message, /还没有同步文件/);
 });
