@@ -203,7 +203,16 @@ async function runNaiSync({ mode = 'both', auto = false } = {}) {
   const remoteEntries = remoteDoc?.entries && typeof remoteDoc.entries === 'object' ? remoteDoc.entries : {};
   const state = await readNaiSyncState();
 
-  const rawPlan = naiSyncCompare({ localValues, remoteEntries, base: state.base || {} });
+  const base = state.base || {};
+  const firstSync = !state.lastSyncAt || !Object.keys(base).length;
+  const rawPlan = naiSyncCompare({
+    localValues,
+    remoteEntries,
+    base,
+    // 第一次同步（没有基线）时，两端都有又不一样的值按"取云端"处理：
+    // 手机上刚装好就点同步，期待的是拿到电脑那份配置，而不是被自己那份默认值挡住。
+    firstSyncRemoteWins: firstSync && mode !== 'push',
+  });
   const conflicts = rawPlan.conflicts.slice();
   const plan = naiSyncPlanForMode(rawPlan, mode);
 
@@ -228,7 +237,13 @@ async function runNaiSync({ mode = 'both', auto = false } = {}) {
     await naiSyncStorageSet({ [NAI_SYNC_STATE_KEY]: { base: nextBase, lastSyncAt: Date.now() } });
   } else {
     await naiSyncWriteRemote(config, composed.doc);
-    await naiSyncStorageSet({ [NAI_SYNC_STATE_KEY]: { base: naiSyncNextBase(composed.doc), lastSyncAt: Date.now() } });
+    const nextBase = naiSyncNextBase(composed.doc);
+    // 冲突项不记基线：记了下次就会被当成"一边改过"而单方面推上去，
+    // 等于绕过用户的「以本机为准 / 以云端为准」选择。
+    conflicts.forEach((key) => {
+      delete nextBase[key];
+    });
+    await naiSyncStorageSet({ [NAI_SYNC_STATE_KEY]: { base: nextBase, lastSyncAt: Date.now() } });
     wrote = true;
   }
 
@@ -236,6 +251,7 @@ async function runNaiSync({ mode = 'both', auto = false } = {}) {
   const result = {
     ok: true,
     mode,
+    firstSync: Boolean(firstSync),
     pushed: plan.push.length,
     pulled: plan.pull.length,
     conflicts,

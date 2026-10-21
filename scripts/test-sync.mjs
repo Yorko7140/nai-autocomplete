@@ -207,15 +207,34 @@ test('拉下来的项写进本地，推上去的项进云端文档', () => {
   assert.equal(composed.doc.deviceId, 'dev-a');
 });
 
-test('冲突默认保留本地', () => {
+test('冲突时两边都不动（本地保留自己的，云端那份也不被覆盖）', () => {
   const composed = compose({
     localValues: { naiArtistTracker_v1: LOCAL_ARTISTS },
     remoteEntries: { naiArtistTracker_v1: { at: 2, value: REMOTE_ARTISTS } },
     plan: { pull: [], push: [], conflicts: ['naiArtistTracker_v1'] },
     conflictResolution: 'local',
   });
-  assert.equal(composed.doc.entries['naiArtistTracker_v1'].value.artists[0].name, 'WLOP');
+  // 本地不写：用户还能接着用自己的那份
   assert.equal(composed.localWrites['naiArtistTracker_v1'], undefined);
+  // 云端也不写：以前这里会把本地值塞进 entries，等于把云端刚同步上去的数据抹掉
+  assert.equal(composed.doc.entries['naiArtistTracker_v1'].value.artists[0].name, 'Ciloranko');
+});
+
+test('首次同步没有基线时按云端为准，避免新设备被自己那份默认值挡住', () => {
+  const plan = compare({
+    localValues: { naiArtistTracker_v1: LOCAL_ARTISTS },
+    remoteEntries: { naiArtistTracker_v1: { at: 2, value: REMOTE_ARTISTS } },
+    base: {},
+    firstSyncRemoteWins: true,
+  });
+  assert.equal(plan.pull.join('|'), 'naiArtistTracker_v1');
+  assert.equal(plan.conflicts.join('|'), '');
+  const strict = compare({
+    localValues: { naiArtistTracker_v1: LOCAL_ARTISTS },
+    remoteEntries: { naiArtistTracker_v1: { at: 2, value: REMOTE_ARTISTS } },
+    base: {},
+  });
+  assert.equal(strict.conflicts.join('|'), 'naiArtistTracker_v1');
 });
 
 test('明确选择云端时，冲突项取远端', () => {

@@ -319,11 +319,26 @@ async function writePromptFieldValue(value, mode = 'append') {
       ? window.HTMLTextAreaElement?.prototype
       : window.HTMLInputElement?.prototype;
     const setter = prototype && Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-    if (setter) setter.call(field, next);
-    else field.value = next;
-    field.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-    field.dispatchEvent(new Event('change', { bubbles: true }));
-    field.setSelectionRange?.(next.length, next.length);
+    const write = () => {
+      // React 的 _valueTracker 会跟着原生 setter 一起更新，导致它认为"值没变"而跳过 onChange，
+      // 随后重渲染把值抹回去。先清 tracker 再写。
+      naiResetReactValueTracker?.(field);
+      if (setter) setter.call(field, next);
+      else field.value = next;
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: next }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+      field.setSelectionRange?.(next.length, next.length);
+    };
+    write();
+    // 站点是受控组件时值可能被回滚，读回确认一次，不行再写一遍
+    if (String(field.value || '') !== String(next)) {
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      write();
+    }
+    if (String(field.value || '') !== String(next)) {
+      setStatus(T.agentPromptWriteFailed || T.statusCopyFailed, true);
+      return false;
+    }
   } else {
     const existing = replace ? '' : String(field.innerText || field.textContent || '').trimEnd();
     const addition = existing

@@ -150,6 +150,7 @@ const T = {
   agentBlockCharacter: '角色外貌',
   agentBlockOther: '代码块',
   agentPromptWritten: '已写入提示词框',
+  agentPromptWriteFailed: '没能写进提示词框（站点把值回滚了），请刷新页面再试，或手动粘贴。',
   agentImport: '导入',
   agentExport: '导出',
   agentEdit: '编辑正文',

@@ -125,22 +125,40 @@ function findNaiAddCharacterButton() {
   }) || null;
 }
 
+// React 在 input 元素上挂了一个 _valueTracker 记录"上次见过的值"。
+// 只用原生 setter 改 value 时 tracker 会跟着同步，React 随后就认为值没变、跳过 onChange，
+// 于是页面重渲染时把值又抹回旧内容（表现就是"填进去了又变空"）。
+// 把 tracker 清成空串，React 才会真的把新值当成一次输入。
+function naiResetReactValueTracker(field) {
+  const tracker = field && field._valueTracker;
+  if (tracker && typeof tracker.setValue === 'function') {
+    try {
+      tracker.setValue('');
+    } catch (error) {
+      /* 某些站点的 tracker 是只读的，忽略即可 */
+    }
+  }
+}
+
 // React 不认直接赋值给 .value —— 它记的是自己那份 state，得走原生 setter 再派 input 事件
 function setNaiFieldValue(field, value) {
+  if (!field) return false;
   field.focus?.();
   if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
     const prototype = field.tagName === 'TEXTAREA'
       ? window.HTMLTextAreaElement?.prototype
       : window.HTMLInputElement?.prototype;
     const setter = prototype && Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+    naiResetReactValueTracker(field);
     if (setter) setter.call(field, value);
     else field.value = value;
     field.setSelectionRange?.(value.length, value.length);
   } else {
     field.textContent = value;
   }
-  field.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  field.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: String(value) }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 }
 
 function nextNaiFrame() {
@@ -151,27 +169,41 @@ function waitNaiMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 点「添加角色」补足栏位。参考实现点完只 await 一个微任务就去数，React 还没重渲染完，
-// 会漏数然后误判「加不上去了」。这里等一帧再数，并且连续两轮不涨就停 —— 不能无限点。
+// 数角色框时把"暂时不可见"的也算上：站点新建的角色卡可能先是折叠的，
+// 只看可见的会误判成"没加上"，于是又点一次「Add character」，最后在页面上堆出一排空角色栏。
+function countNaiCharacterFields() {
+  return Array.from(document.querySelectorAll(NAI_FIELD_SELECTOR))
+    .filter((field) => !naiIsExtensionUi(field))
+    .filter((field) => isNaiEditableField(field) && !isNaiNegativeField(field) && isNaiCharacterField(field))
+    .length;
+}
+
+// 点「添加角色」补足栏位。点完要等站点真的把新卡渲染出来：
+// 轮询到数量上涨为止（最多约 1.5 秒），涨不上去就停手 —— 绝不能连点，那会建出一堆空栏。
 async function ensureNaiCharacterFields(count) {
   await ensureNaiCharacterSectionOpen();
-  let fields = listNaiCharacterFields();
-  let stalled = 0;
+  let total = countNaiCharacterFields();
 
-  while (fields.length < count && stalled < 2) {
+  while (total < count) {
     const button = findNaiAddCharacterButton();
     if (!button) break;
 
-    const before = fields.length;
+    const before = total;
     button.click();
-    // 新增角色卡是异步渲染的，等一帧再补一小段，否则会误判成「加不上去」
-    await nextNaiFrame();
-    await waitNaiMs(120);
-    fields = listNaiCharacterFields();
-    stalled = fields.length > before ? 0 : stalled + 1;
+    let grew = false;
+    for (let i = 0; i < 15; i += 1) {
+      await nextNaiFrame();
+      await waitNaiMs(100);
+      total = countNaiCharacterFields();
+      if (total > before) {
+        grew = true;
+        break;
+      }
+    }
+    if (!grew) break;
   }
 
-  return fields;
+  return listNaiCharacterFields();
 }
 
 // characters: [{ prompt, label?, slot? }]，slot 从 1 起
@@ -208,6 +240,29 @@ async function fillNaiCharacterFields(characters) {
     };
   }
 
-  desired.forEach((entry) => setNaiFieldValue(fields[entry.slot - 1], entry.prompt));
-  return { ok: true, filled: desired.length, message: `已填入 ${desired.length} 个角色栏` };
+  let written = 0;
+  for (const entry of desired) {
+    const field = fields[entry.slot - 1];
+    setNaiFieldValue(field, entry.prompt);
+    await nextNaiFrame();
+    // 受控组件的值可能被 React 回滚，写失败就再试一次，两次都不行才算失败
+    if (String(field.value || '').trim() !== entry.prompt) {
+      setNaiFieldValue(field, entry.prompt);
+      await nextNaiFrame();
+    }
+    if (String(field.value || '').trim() === entry.prompt) written += 1;
+  }
+
+  if (!written) {
+    return {
+      ok: false,
+      filled: 0,
+      reason: 'write-failed',
+      message: '角色栏找到了，但站点没接受写入的值（可能被 React 回滚）。请刷新页面后再试一次。',
+    };
+  }
+  if (written < desired.length) {
+    return { ok: false, filled: written, reason: 'partial', message: `只写进 ${written}/${desired.length} 个角色栏，剩下的被站点回滚了。` };
+  }
+  return { ok: true, filled: written, message: `已填入 ${written} 个角色栏` };
 }

@@ -135,7 +135,7 @@ function naiSyncEmptyDoc(deviceId) {
 
 // 三方比较：local 是本地当前的键值，remote 是远端的 entries（{at, value}），
 // base 是上次同步成功时每个键的哈希。谁跟 base 不一样，就是谁改过。
-function naiSyncCompare({ localValues = {}, remoteEntries = {}, base = {} } = {}) {
+function naiSyncCompare({ localValues = {}, remoteEntries = {}, base = {}, firstSyncRemoteWins = false } = {}) {
   const result = { same: [], push: [], pull: [], conflicts: [] };
   const keys = new Set([...Object.keys(localValues), ...Object.keys(remoteEntries)]);
   keys.forEach((key) => {
@@ -160,6 +160,13 @@ function naiSyncCompare({ localValues = {}, remoteEntries = {}, base = {} } = {}
     }
 
     const known = base[key];
+    if (!known && firstSyncRemoteWins) {
+      // 没有基线 = 第一次接进来（新设备、刚重装、新装同步）。
+      // 这时两端都有值又长得不一样，用户想要的多半是"把云端那份拿过来"，
+      // 所以按拉取处理；真要以本机为准，点「以本机为准推送」。
+      result.pull.push(key);
+      return;
+    }
     const localChanged = !known || known.hash !== localHash;
     const remoteChanged = !known || known.hash !== remoteHash;
     if (localChanged && !remoteChanged) result.push.push(key);
@@ -189,22 +196,21 @@ function naiSyncCompose({ localValues = {}, remoteEntries = {}, plan, conflictRe
     entries[key] = { at: now, value: localValues[key] };
   });
 
-  // 冲突：默认保留本地（不静默丢自己的数据），远端那份留到用户明确选择再用。
+  // 冲突：两边都不动。本机保留自己的版本（不静默丢数据），云端那份也原样留在远端，
+  // 等用户明确点「以本机为准推送」或「以云端为准拉取」再决定 ——
+  // 以前这里直接拿本地值覆盖 entries，等于把云端刚同步上去的数据抹掉。
   (plan.conflicts || []).forEach((key) => {
     if (conflictResolution === 'remote') {
       localWrites[key] = remoteEntries[key].value;
       localValues[key] = remoteEntries[key].value;
-      return;
     }
-    entries[key] = { at: now, value: localValues[key] };
   });
 
-  // 本地的名字也要落到 entries 里：第一次同步时云端是空的，全靠这一条铺开
+  // 只补云端还没有的键：第一次同步时云端是空的，全靠这一条铺开。
+  // 云端已有同一键时别再拿本地值覆盖（那会盖掉比本机新的数据）。
   Object.keys(localValues).forEach((key) => {
     if (!naiSyncIsSyncedKey(key)) return;
-    if (!entries[key] || naiSyncHash(entries[key].value) !== naiSyncHash(localValues[key])) {
-      entries[key] = { at: now, value: localValues[key] };
-    }
+    if (!entries[key]) entries[key] = { at: now, value: localValues[key] };
   });
 
   return {
