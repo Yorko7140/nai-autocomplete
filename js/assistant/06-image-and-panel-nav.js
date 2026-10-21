@@ -441,6 +441,8 @@ function openLibrarySettingsPanel() {
   state.workbenchPage = 'settings';
   state.libraryEditorOpen = false;
   syncWorkbenchLayoutState();
+  // 同步卡片的事件是挂载时绑的；不在这里补一次，切到设置页点「测试连接」会毫无反应
+  applySyncSettingsToInputs();
   requestAnimationFrame(() => autoResizeAllTextareas());
 }
 

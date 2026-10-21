@@ -85,6 +85,11 @@ function naiSyncPanelMarkup() {
             <button type="button" data-action="sync-push">以本机为准推送</button>
             <button type="button" data-action="sync-pull">以云端为准拉取</button>
           </div>
+          <div class="nai-library-settings-actions">
+            <button type="button" data-action="sync-export">导出配置</button>
+            <button type="button" data-action="sync-import">导入配置</button>
+          </div>
+          <div class="nai-library-note">换设备、重装扩展时用「导出配置」把这段同步设置带走（文件里有口令，别外传）。手动更新扩展不会丢配置，不用导出。</div>
           <div class="nai-library-note" data-sync-status>还没读取同步配置</div>
         </div>`;
 }
@@ -183,6 +188,92 @@ async function naiSyncPanelSave(root) {
   return response.config;
 }
 
+// 同步配置的导入导出：换设备/重装扩展后不用把地址、账号、应用密码、口令重打一遍。
+// 文件里是明文口令 —— 它本来就是给自己带设备的，所以不加密，但按钮旁写清了别外传。
+function naiSyncPanelExport(root) {
+  const config = naiSyncPanelRead(root);
+  const payload = {
+    format: 'nai-sync-config-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    config: {
+      url: config.url,
+      username: config.username,
+      password: config.password,
+      remotePath: config.remotePath,
+      passphrase: config.passphrase,
+      intervalMinutes: config.intervalMinutes,
+      enabled: config.enabled,
+      deviceId: config.deviceId,
+    },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `nai-sync-config-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  naiSyncPanelSetStatus(root, '同步配置已导出（文件含 WebDAV 密码与口令，注意保管）', 'ok');
+}
+
+// 导入文件的解析（纯函数，便于 node 侧单测）：接受导出格式或裸配置对象。
+function naiSyncPanelParseConfigText(text) {
+  let payload;
+  try {
+    payload = JSON.parse(String(text || ''));
+  } catch (error) {
+    throw new Error('这个文件不是合法 JSON');
+  }
+  const config = payload?.config || payload;
+  if (!config || typeof config !== 'object' || !String(config.url || '').trim()) {
+    throw new Error('文件里没有找到同步配置（缺少 WebDAV 地址）');
+  }
+  return config;
+}
+
+function naiSyncPanelPickFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = input.files?.[0] || null;
+      input.remove();
+      resolve(file);
+    });
+    input.click();
+  });
+}
+
+async function naiSyncPanelImport(root) {
+  const file = await naiSyncPanelPickFile();
+  if (!file) return;
+  let parsed;
+  try {
+    parsed = naiSyncPanelParseConfigText(await file.text());
+  } catch (error) {
+    naiSyncPanelSetStatus(root, String(error?.message || error), 'error');
+    return;
+  }
+  const config = parsed;
+  // 导入是用户明确要求覆盖表单的，得先清掉「用户改过就别填」的标记，
+  // 否则点了导入只会把 deviceId 写进去，表单纹丝不动
+  if (root) delete root.dataset.userEdited;
+  naiSyncPanelFill(root, { ...config, deviceId: config.deviceId });
+  const saved = await naiSyncPanelSave(root);
+  if (!saved) return;
+  naiSyncPanelSetStatus(
+    root,
+    '同步配置已导入并保存，可以点「立即同步（双向）」了',
+    'ok',
+  );
+}
+
 function naiSyncPanelSummary(result) {
   if (!result) return '没有返回结果';
   if (result.error) return `同步失败：${result.error}`;
@@ -193,6 +284,16 @@ function naiSyncPanelSummary(result) {
 
 async function naiSyncPanelHandle(root, action) {
   try {
+    if (action === 'sync-export') {
+      naiSyncPanelExport(root);
+      return;
+    }
+
+    if (action === 'sync-import') {
+      await naiSyncPanelImport(root);
+      return;
+    }
+
     if (action === 'sync-save') {
       await naiSyncPanelSave(root);
       return;

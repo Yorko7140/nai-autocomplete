@@ -24,7 +24,7 @@ const PORT = 8126;
 // 用真实域名 + host-resolver-rules 指到本机：站点层按 hostname 认站点，
 // 换成 127.0.0.1 就测不到 idlecloud 那条分支了。
 const HOST = 'nai.idlecloud.cc';
-const PAGE_URL = `http://${HOST}:${PORT}/fixture`;
+const PAGE_URL = `http://${HOST}:${PORT}/main`;
 const DEBUG_PORT = 9333;
 const CHROME = process.env.CHROME_PATH
   || '/home/administrator/.cache/ms-playwright/chromium-1187/chrome-linux/chrome';
@@ -61,7 +61,7 @@ function prepareBuild() {
 
 function startServer() {
   const server = http.createServer((request, response) => {
-    if (request.url === '/fixture' || request.url === '/') {
+    if (request.url === '/fixture' || request.url === '/main' || request.url === '/') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(IDLECLOUD_FIXTURE_HTML);
       return;
@@ -188,7 +188,7 @@ async function main() {
     let navigated = false;
     for (let i = 0; i < 60 && !navigated; i += 1) {
       const href = await evaluate(client, sessionId, `location.href`).catch(() => '');
-      navigated = String(href).includes('/fixture');
+      navigated = String(href).includes('/main');
       if (!navigated) await sleep(250);
     }
     check('替身页加载完成', navigated);
@@ -336,7 +336,38 @@ async function main() {
     check('OpenCode Go 的地址带 /zen/go/v1', /zen\/go\/v1/.test(llmExtra.endpoint || ''), llmExtra.endpoint);
 
     // —— 跨设备同步：设置页那张卡片在不在、口令框有没有踩到密码框的坑
-    await evaluate(client, sessionId, `document.querySelector('.nai-library-page [data-page="settings"], [data-page="settings"]')?.click()`);
+    // 工作台只在出图页存在，真实入口是扩展图标（background 发的 nai-open-workbench）。
+    // 这里从 service worker 发同一条消息，等价于点图标。
+    let workerSession = null;
+    for (let i = 0; i < 20 && !workerSession; i += 1) {
+      const { targetInfos } = await client.send('Target.getTargets');
+      const worker = targetInfos.find((info) => info.url.startsWith('chrome-extension://'));
+      if (!worker) {
+        await sleep(300);
+        continue;
+      }
+      const attached = await client.send('Target.attachToTarget', { targetId: worker.targetId, flatten: true });
+      await client.send('Runtime.enable', {}, attached.sessionId);
+      workerSession = attached.sessionId;
+    }
+    if (workerSession) {
+      await client.send('Runtime.evaluate', {
+        expression: `new Promise((resolve) => { chrome.tabs.query({}, (tabs) => { const tab = tabs.find((item) => (item.url || '').includes('/main')) || tabs[0]; chrome.tabs.sendMessage(tab.id, { type: 'nai-open-workbench' }, () => resolve(true)); }); })`,
+        awaitPromise: true,
+        returnByValue: true,
+      }, workerSession);
+    }
+    let workbenchOpen = false;
+    for (let i = 0; i < 40 && !workbenchOpen; i += 1) {
+      workbenchOpen = await evaluate(client, sessionId, `(() => {
+        const drawer = document.querySelector('.nai-library-drawer');
+        return Boolean(drawer) && !drawer.classList.contains('nai-hidden');
+      })()`);
+      if (!workbenchOpen) await sleep(200);
+    }
+    check('绘图页点扩展图标会打开工作台', workbenchOpen);
+    await evaluate(client, sessionId, `document.querySelector('[data-workbench-page="settings"]')?.click()`);
+    await sleep(400);
     let syncCard = false;
     for (let i = 0; i < 25 && !syncCard; i += 1) {
       syncCard = await evaluate(client, sessionId, `Boolean(document.querySelector('[data-sync-root]'))`);
@@ -373,6 +404,91 @@ async function main() {
       await sleep(150);
     }
     check('没配地址时点测试连接会提示', /WebDAV 地址/.test(syncStatus), syncStatus);
+
+    // —— 换设备不用重输：同步配置的导出 / 导入
+    check('同步卡片能导出 / 导入配置', ['sync-export', 'sync-import'].every((action) => syncForm?.actions?.includes(action)), JSON.stringify(syncForm?.actions));
+
+    await evaluate(client, sessionId, `(() => {
+      const root = document.querySelector('[data-sync-root]');
+      const url = root?.querySelector('[data-sync-field="url"]');
+      if (url) {
+        url.value = 'https://dav.jianguoyun.com/dav/';
+        url.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return Boolean(url);
+    })()`);
+    await evaluate(client, sessionId, `document.querySelector('[data-action="sync-export"]')?.click()`);
+    let exportStatus = '';
+    for (let i = 0; i < 30; i += 1) {
+      exportStatus = await evaluate(client, sessionId, `document.querySelector('[data-sync-status]')?.textContent || ''`);
+      if (/已导出/.test(exportStatus)) break;
+      await sleep(150);
+    }
+    check('点导出配置会给出提示', /已导出/.test(exportStatus), exportStatus);
+
+    // —— 导入配置：文件选择器必须用真实鼠标事件才打得开（evaluate 里的 click 没有用户手势）
+    const cfgPath = '/tmp/nai-sync-config-smoke.json';
+    fs.writeFileSync(cfgPath, JSON.stringify({
+      format: 'nai-sync-config-backup',
+      version: 1,
+      config: {
+        url: 'https://dav.jianguoyun.com/dav/',
+        username: 'smoke@example.com',
+        password: 'app-pass',
+        remotePath: '/smoke/sync.json',
+        passphrase: 'smoke-pass',
+        intervalMinutes: 45,
+        enabled: true,
+        deviceId: 'smoke-device',
+      },
+    }, null, 2));
+    await client.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId);
+    const importPoint = await evaluate(client, sessionId, `(() => {
+      const button = document.querySelector('.nai-library-drawer [data-action="sync-import"]');
+      if (!button) return null;
+      button.scrollIntoView({ block: 'center' });
+      return true;
+    })()`);
+    await sleep(350);
+    const importRect = await evaluate(client, sessionId, `(() => {
+      const button = document.querySelector('.nai-library-drawer [data-action="sync-import"]');
+      if (!button) return null;
+      const rect = button.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    if (importPoint && importRect) {
+      await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: importRect.x, y: importRect.y }, sessionId);
+      await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: importRect.x, y: importRect.y, button: 'left', clickCount: 1 }, sessionId);
+      await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: importRect.x, y: importRect.y, button: 'left', clickCount: 1 }, sessionId);
+    }
+    let chooser = null;
+    for (let i = 0; i < 40 && !chooser; i += 1) {
+      chooser = client.events.find((message) => message.method === 'Page.fileChooserOpened');
+      if (!chooser) await sleep(150);
+    }
+    check('点导入配置会弹文件选择器', Boolean(chooser), chooser ? '已弹出' : `未弹出 point=${JSON.stringify(importRect)}`);
+    if (chooser) {
+      await client.send('DOM.setFileInputFiles', { files: [cfgPath], backendNodeId: chooser.params.backendNodeId }, sessionId);
+    }
+    let importStatus = '';
+    for (let i = 0; i < 40; i += 1) {
+      importStatus = await evaluate(client, sessionId, `document.querySelector('[data-sync-status]')?.textContent || ''`);
+      if (/已导入|失败|没有找到|不是合法/.test(importStatus)) break;
+      await sleep(200);
+    }
+    check('导入后提示已保存', /已导入/.test(importStatus), importStatus);
+    const importedForm = await evaluate(client, sessionId, `(() => {
+      const root = document.querySelector('[data-sync-root]');
+      const pick = (field) => root?.querySelector('[data-sync-field="' + field + '"]');
+      return {
+        url: pick('url')?.value || '',
+        username: pick('username')?.value || '',
+        passphrase: pick('passphrase')?.value || '',
+        interval: pick('intervalMinutes')?.value || '',
+        enabled: pick('enabled')?.checked === true,
+      };
+    })()`);
+    check('导入把表单填回来了', /jianguoyun/.test(importedForm.url) && importedForm.username === 'smoke@example.com' && importedForm.passphrase === 'smoke-pass' && importedForm.interval === '45' && importedForm.enabled === true, JSON.stringify(importedForm));
 
     if (process.env.SHOT_SYNC) {
       await sleep(300);

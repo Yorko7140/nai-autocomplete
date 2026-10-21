@@ -449,4 +449,44 @@ test('run 的返回里有拉取/推送的条数，方便界面直接显示', asy
   assert.equal(typeof response.pushed, 'number');
 });
 
+group('同步配置导入导出');
+const parseConfigText = box.get('naiSyncPanelParseConfigText');
+
+test('导入配置：认导出文件里的 config 字段', () => {
+  const text = JSON.stringify({
+    format: 'nai-sync-config-backup',
+    version: 1,
+    config: durConfigSample(),
+  });
+  const config = parseConfigText(text);
+  assert.equal(config.url, 'https://dav.jianguoyun.com/dav/');
+  assert.equal(config.passphrase, 'pass-123');
+});
+
+test('导入配置：裸配置对象也认（手工写的 JSON）', () => {
+  const config = parseConfigText(JSON.stringify({ url: 'https://dav.example.com/dav/', username: 'u' }));
+  assert.equal(config.username, 'u');
+});
+
+test('导入配置：缺 WebDAV 地址要说清楚', () => {
+  assert.throws(() => parseConfigText(JSON.stringify({ config: { username: 'u' } })), /缺少 WebDAV 地址/);
+});
+
+test('导入配置：不是 JSON 时给出人话', () => {
+  assert.throws(() => parseConfigText('not json at all'), /不是合法 JSON/);
+});
+
+function durConfigSample() {
+  return {
+    url: 'https://dav.jianguoyun.com/dav/',
+    username: 'me@example.com',
+    password: 'app-password',
+    remotePath: '/nai-autocomplete/nai-autocomplete-sync.json',
+    passphrase: 'pass-123',
+    intervalMinutes: 30,
+    enabled: true,
+    deviceId: 'device-aaa',
+  };
+}
+
 await run('跨设备同步');
