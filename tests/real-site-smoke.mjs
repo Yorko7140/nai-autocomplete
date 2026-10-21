@@ -147,9 +147,17 @@ async function main() {
     check('只交出 1 个可写提示词框', editors.length === 1, JSON.stringify(editors));
     check('认得出当前是 /main 绘图页', await evaluate(client, sessionId, `window.__site.naiIsImagePage(window)`));
 
-    // 画师库全链路：从 service worker 写数据 → 面板 → 点卡片 → 落到真框
-    const workerTarget = (await client.send('Target.getTargets')).targetInfos.find((item) => item.type === 'service_worker');
-    const worker = await client.send('Target.attachToTarget', { targetId: workerTarget.targetId, flatten: true });
+    // 画师库全链路：从扩展页写 storage（service worker 里没有 chrome 对象）→ 面板 → 点卡片 → 落到真框
+    const targets = (await client.send('Target.getTargets')).targetInfos;
+    const extTarget = targets.find((item) => /^chrome-extension:\/\//.test(item.url || ''));
+    if (!extTarget) {
+      console.error('没找到任何扩展 target，无法写入画师库数据');
+      process.exitCode = 2;
+      return;
+    }
+    const extId = new URL(extTarget.url).host;
+    const libTab = await client.send('Target.createTarget', { url: `chrome-extension://${extId}/pages/artist-library.html` });
+    const libSession = await client.send('Target.attachToTarget', { targetId: libTab.targetId, flatten: true });
     const library = {
       artists: [{ id: 'smoke1', name: '冒烟画师', tag: 'artist:smoke_test', rating: 4, notes: '', categories: ['测试'] }],
       labels: ['测试'],
@@ -157,11 +165,14 @@ async function main() {
       pages: [{ id: 'default', name: '我的画师库' }],
       activePageId: 'default',
     };
-    await client.send('Runtime.evaluate', {
-      expression: `chrome.storage.local.set({ naiArtistTracker_v1: ${JSON.stringify(JSON.stringify(library))} })`,
-      awaitPromise: true,
-      returnByValue: true,
-    }, worker.sessionId);
+    for (let i = 0; i < 40; i += 1) {
+      const ready = await evaluate(client, libSession.sessionId, `typeof chrome !== 'undefined' && Boolean(chrome.storage?.local)`);
+      if (ready) break;
+      await sleep(150);
+    }
+    const seeded = await evaluate(client, libSession.sessionId, `chrome.storage.local.set({ naiArtistTracker_v1: ${JSON.stringify(JSON.stringify(library))} }).then(() => 'ok')`);
+    check('画师库数据已写入扩展存储', seeded === 'ok', String(seeded));
+    await client.send('Target.closeTarget', { targetId: libTab.targetId });
     await sleep(300);
 
     await evaluate(client, sessionId, `document.querySelector('.nai-md3-fab')?.click()`);
